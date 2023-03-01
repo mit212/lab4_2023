@@ -6,6 +6,7 @@
   Rev. 2.0 -- 08/25/2020 H.C.
   Rev. 3.0 -- 03/31/2021 H.S.
   Rev. 4.0 -- 03/06/2022 H.C.
+  Rev. 5.0 -- 03/01/2023 H.C.
 
 ***********************************************************************************/
 #include <Encoder.h>
@@ -49,8 +50,8 @@ float Ki_2 = 0.0;
 // Switch between built-in Serial Plotter and Matlab streaming
 // comment out both to disable serial output
 
-#define PRINT_DATA
-//#define MATLAB_SERIAL_READ
+// #define arduinoSerialPrint
+#define MATLABSerialPrint
 
 // ================================================================
 // ===               DFROBOT MOTOR SHIELD DEFINITION            ===
@@ -84,8 +85,8 @@ Encoder Mot2(2, 5);
 
 double q_1 = 0.0, pre_q_1 = 0.0; // Current and previous joint angles of the motor 1
 double q_2 = 0.0, pre_q_2 = 0.0; // Current and previous joint angles of the motor 2
-double error_1, sum_error_1 = 0.0, d_error_1 = 0.0, filt_d_error_1 = 0.0, error_pre_1;
-double error_2, sum_error_2 = 0.0, d_error_2 = 0.0, filt_d_error_2 = 0.0, error_pre_2;
+double error_1, i_error_1 = 0.0, d_error_1 = 0.0, filt_d_error_1 = 0.0, error_pre_1;
+double error_2, i_error_2 = 0.0, d_error_2 = 0.0, filt_d_error_2 = 0.0, error_pre_2;
 
 // Circular path information
 float CircleCenterX = 0.15;
@@ -182,25 +183,25 @@ void loop() {
     d_error_1 = (error_1 - error_pre_1) / loop_time;
     // 1st order filter to clean up noise
     filt_d_error_1 = alpha * d_error_1 + (1 - alpha) * filt_d_error_1;
-    sum_error_1 += error_1 * loop_time;
+    i_error_1 += error_1 * loop_time;
     error_pre_1 = error_1;
-    motorControl(DIR_1, PWM_1, error_1, d_error_1, sum_error_1, Kp_1, Kd_1, Ki_1);
+    motorControl(DIR_1, PWM_1, error_1, d_error_1, i_error_1, Kp_1, Kd_1, Ki_1);
 
     // PID controller for motor 2
     error_2 = set_point_2 - q_2;
     d_error_2 = (error_2 - error_pre_2) / loop_time;
     // 1st order filter to clean up noise
     filt_d_error_2 = alpha * d_error_2 + (1 - alpha) * filt_d_error_2;
-    sum_error_2 += error_2 * loop_time;
+    i_error_2 += error_2 * loop_time;
     error_pre_2 = error_2;
-    motorControl(DIR_2, PWM_2, error_2, d_error_2, sum_error_2, Kp_2, Kd_2, Ki_2);
+    motorControl(DIR_2, PWM_2, error_2, d_error_2, i_error_2, Kp_2, Kd_2, Ki_2);
 
     // ================================================================
     // ===                    PRINT DATA                            ===
     // ================================================================
 
 
-#ifdef PRINT_DATA
+#ifdef arduinoSerialPrint
     Serial.print("x_e, y_e: ");
     Serial.print(x_e);  Serial.print(", ");
     Serial.print(y_e);  Serial.print("\t"); // print out x_e, y_e
@@ -212,20 +213,20 @@ void loop() {
     Serial.print(q_2); Serial.print("\t"); // set_point_2, q_2
     //  Serial.print(Mot1.read()); Serial.print("\t");
     //  Serial.print(Mot2.read()); Serial.print("\t");
-    Serial.print("\n");
+    Serial.println();
 #endif
 
-#ifdef MATLAB_SERIAL_READ
+#ifdef MATLABSerialPrint
   Serial.print(timer / 1000000.0);   Serial.print("\t");
   Serial.print(set_point_1,4);    Serial.print("\t");
   Serial.print(q_1,4);    Serial.print("\t");
   Serial.print(set_point_2,4);    Serial.print("\t");
   Serial.print(q_2,4);    Serial.print("\t");
-  Serial.print("\n");
+  Serial.println();
 #endif
 
     i++;  // change this line to i+=2; for every 2 degrees per samping period.
-    //  delay(30);
+
   }
   loop_time = (micros() - timer) / 1000000.0;  //compute actual sample time
 }
@@ -271,12 +272,12 @@ void Inverse_K()
 // ===                   MOTOR CONTROLLER                       ===
 // ================================================================
 
-void motorControl(int DIR_x, int PWM_x, float error, float d_error, float sum_error, float Kp_x, float Kd_x, float Ki_x)
+void motorControl(int DIR_x, int PWM_x, float error, float d_error, float i_error, float Kp_x, float Kd_x, float Ki_x)
 {
   float pwm_command;
 
   Pcontrol = error * Kp_x;
-  Icontrol = sum_error * Ki_x;
+  Icontrol = i_error * Ki_x;
   Dcontrol = d_error * Kd_x;
 
   Icontrol = constrain(Icontrol, -255, 255);  // I control saturation limits for anti-windup
